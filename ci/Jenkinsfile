@@ -60,7 +60,8 @@ pipeline {
                         --set movieService.image.repository=$DOCKER_USER/movie-service \
                         --set movieService.image.tag=$BUILD_TAG \
                         --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG
+                        --set castService.image.tag=$BUILD_TAG \
+		        --set service.nodePort=3007
 
                     # Déploiement sur staging
                     helm upgrade --install jenkins-exam-staging ./charts \
@@ -68,7 +69,8 @@ pipeline {
                         --set movieService.image.repository=$DOCKER_USER/movie-service \
                         --set movieService.image.tag=$BUILD_TAG \
                         --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG
+                        --set castService.image.tag=$BUILD_TAG \
+			--set service.nodePort=30008
                 '''
             }
         }
