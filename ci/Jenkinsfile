@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_USER = "mhadjeres1966"
+        DOCKER_USER = "mourad1966"
         DOCKER_PASS = credentials('DOCKER_HUB_PASS')
         KUBECONFIG_FILE = credentials('config')
         BUILD_TAG = "v${BUILD_ID}"
