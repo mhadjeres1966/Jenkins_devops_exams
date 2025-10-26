@@ -75,6 +75,12 @@ pipeline {
             }
         }
 
+	stage('Debug') {
+	    steps {
+		echo "GIT_BRANCH = ${env.GIT_BRANCH}"
+	    }
+        }
+
         stage('Approval & Deploy to Production') {
             when {
                 branch 'master' // ✅ Seulement sur master
