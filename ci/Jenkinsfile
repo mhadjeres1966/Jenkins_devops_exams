@@ -14,7 +14,7 @@ pipeline {
             steps {
                 echo "📦 Clonage du dépôt GitHub (branche courante)"
                 git(
-                    branch: 'ci-cd-setup',
+                    branch: 'master',
                     url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
                     credentialsId: 'github_creds'
                 )
