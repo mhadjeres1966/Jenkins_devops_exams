@@ -1,84 +1,50 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    BUILD_TAG = "v${BUILD_ID}"                // ex: v23
-    KUBECONFIG_FILE = credentials('config')   // kubeconfig (Secret file)
-  }
-
-  stages {
-
-    stage('Checkout Code') {
-      steps {
-        echo "📦 Checkout repository"
-        git(
-          branch: 'ci-cd-setup',
-          url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
-          credentialsId: 'github_creds'
-        )
-      }
+    environment {
+        DOCKER_USER = "mourad1966"
+        DOCKER_PASS = credentials('dockerhub_creds')
+        KUBECONFIG_FILE = credentials('config')
+        BUILD_TAG = "v${BUILD_ID}"
     }
 
-<<<<<<< HEAD
-    stage('Build & Push Docker Images') {
-      steps {
-        script {
-          def services = ['movie-service', 'cast-service']
-          withCredentials([usernamePassword(
-            credentialsId: 'dockerhub_creds',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-          )]) {
-            sh '''
-              set -e
-              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            '''
-            for (svc in services) {
-              sh """
-                set -e
-                echo "==> Build & Push: ${svc}"
-                docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
-                docker push $DOCKER_USER/${svc}:$BUILD_TAG
-              """
-=======
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                echo "📦 Clonage du dépôt GitHub (branche courante)"
+	stage('Checkout Code') {
+  	    steps {
+    	        echo "📦 Clonage du dépôt GitHub (branche courante)"
                 git(
-                    branch: 'ci-cd-setup',
-                    url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
-                    credentialsId: 'github_creds'
+      		  branch: 'ci-cd-setup',
+                  url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
+                  credentialsId: 'github_creds'
                 )
             }
         }
 
-        stage('Build & Push Docker Images') {
-            steps {
-                script {
-                    echo "🐳 Construction et push des images Docker"
-                    def services = ['movie-service', 'cast-service']
 
-                    // ✅ Injection correcte du token DockerHub ici
-                    withCredentials([usernamePassword(credentialsId: 'github_creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
+	stage('Build & Push Docker Images') {
+  	    steps {
+    		script {
+      		  echo "🐳 Construction et push des images Docker"
+      		  def services = ['movie-service', 'cast-service']
 
-                        for (svc in services) {
-                            sh """
-                                echo "==> Building image for ${svc}"
-                                docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
-                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                                docker push $DOCKER_USER/${svc}:$BUILD_TAG
-                            """
-                        }
+      		  withCredentials([usernamePassword(credentialsId: 'dockerhub_creds',
+        	    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS')]) {
 
-                        sh "docker logout"
-                    }
-                }
-            }
-        }
+        	    for (svc in services) {
+          	      sh """
+            	        echo "==> Building image for ${svc}"
+            	        docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
+            	        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            		docker push $DOCKER_USER/${svc}:$BUILD_TAG
+          	      """
+        	   }
+      		}
+             }
+    	   }
+        } 
+
 
         stage('Deploy to Dev & Staging') {
             steps {
@@ -93,8 +59,7 @@ pipeline {
                         --set movieService.image.repository=$DOCKER_USER/movie-service \
                         --set movieService.image.tag=$BUILD_TAG \
                         --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG \
-			--set service.nodePort=30007
+                        --set castService.image.tag=$BUILD_TAG
 
                     # Déploiement sur staging
                     helm upgrade --install jenkins-exam-staging ./charts \
@@ -102,8 +67,7 @@ pipeline {
                         --set movieService.image.repository=$DOCKER_USER/movie-service \
                         --set movieService.image.tag=$BUILD_TAG \
                         --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG \
-			--set service.nodePort=30008 
+                        --set castService.image.tag=$BUILD_TAG
                 '''
             }
         }
@@ -114,6 +78,7 @@ pipeline {
             }
             steps {
                 script {
+                    // ✅ Demande de validation manuelle
                     timeout(time: 20, unit: 'MINUTES') {
                         input message: "Souhaitez-vous déployer en production ?", ok: "Oui, déployer"
                     }
@@ -129,80 +94,20 @@ pipeline {
                             --set movieService.image.repository=$DOCKER_USER/movie-service \
                             --set movieService.image.tag=$BUILD_TAG \
                             --set castService.image.repository=$DOCKER_USER/cast-service \
-                            --set castService.image.tag=$BUILD_TAG \
-			    --set service.nodePort=30009 
-
+                            --set castService.image.tag=$BUILD_TAG
                     '''
                 }
->>>>>>> 87db93fb727d1718c3e2f865cc0f0a1c00a4dbbd
             }
-            sh 'docker logout || true'
-          }
         }
-      }
     }
 
-    stage('Deploy to Dev & Staging') {
-      steps {
-        echo "🚀 Deploy to dev & staging via Helm"
-        sh '''
-          set -e
-          mkdir -p ~/.kube
-          cat "$KUBECONFIG_FILE" > ~/.kube/config
-
-          # --- DEV (NodePort 30007) ---
-          helm upgrade --install jenkins-exam-dev ./charts \
-            --namespace dev --create-namespace \
-            --set movieService.image.repository=$DOCKER_USER/movie-service \
-            --set movieService.image.tag=$BUILD_TAG \
-            --set castService.image.repository=$DOCKER_USER/cast-service \
-            --set castService.image.tag=$BUILD_TAG \
-            --set service.nodePort=30007
-
-          # --- STAGING (NodePort 30008) ---
-          helm upgrade --install jenkins-exam-staging ./charts \
-            --namespace staging --create-namespace \
-            --set movieService.image.repository=$DOCKER_USER/movie-service \
-            --set movieService.image.tag=$BUILD_TAG \
-            --set castService.image.repository=$DOCKER_USER/cast-service \
-            --set castService.image.tag=$BUILD_TAG \
-            --set service.nodePort=30008
-        '''
-      }
-    }
-
-    stage('Approval & Deploy to Production') {
-      when { branch 'master' }   // prod seulement depuis master
-      steps {
-        script {
-          timeout(time: 20, unit: 'MINUTES') {
-            input message: 'Déployer en PRODUCTION ?', ok: 'Oui, déployer'
-          }
-          echo '🚀 Déploiement en production'
-
-          sh '''
-            set -e
-            mkdir -p ~/.kube
-            cat "$KUBECONFIG_FILE" > ~/.kube/config
-
-            # --- PROD (NodePort 30009) ---
-            helm upgrade --install jenkins-exam-prod ./charts \
-              --namespace prod --create-namespace \
-              --set movieService.image.repository=$DOCKER_USER/movie-service \
-              --set movieService.image.tag=$BUILD_TAG \
-              --set castService.image.repository=$DOCKER_USER/cast-service \
-              --set castService.image.tag=$BUILD_TAG \
-              --set service.nodePort=30009
-          '''
+    post {
+        success {
+            echo "✅ Pipeline terminé avec succès !"
         }
-      }
+        failure {
+            echo "❌ Échec du pipeline. Consultez les logs Jenkins."
+        }
     }
-  }
-
-  post {
-    success { echo '✅ Pipeline terminé avec succès' }
-    failure { echo '❌ Échec du pipeline — voir les logs' }
-    always  { cleanWs() }
-  }
 }
 
