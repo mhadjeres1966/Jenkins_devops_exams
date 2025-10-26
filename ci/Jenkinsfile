@@ -15,6 +15,7 @@ pipeline {
                 echo "📦 Clonage du dépôt GitHub (branche courante)"
                 git branch: "${env.BRANCH_NAME ?: 'ci-cd-setup'}",
                     url: 'git@github.com:mhadjeres1966/Jenkins_devops_exams.git'
+		    credentialsId: 'github_creds'
             }
         }
 
