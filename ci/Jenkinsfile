@@ -1,0 +1,103 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_USER = "mhadjeres1966"
+        DOCKER_PASS = credentials('DOCKER_HUB_PASS')
+        KUBECONFIG_FILE = credentials('config')
+        BUILD_TAG = "v${BUILD_ID}"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                echo "📦 Clonage du dépôt GitHub (branche courante)"
+                git branch: "${env.BRANCH_NAME ?: 'ci-cd-setup'}",
+                    url: 'git@github.com:mhadjeres1966/Jenkins_devops_exams.git'
+            }
+        }
+
+        stage('Build & Push Docker Images') {
+            steps {
+                script {
+                    echo "🐳 Construction et push des images Docker"
+                    def services = ['movie-service', 'cast-service']
+
+                    for (svc in services) {
+                        sh """
+                            echo "==> Building image for ${svc}"
+                            docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            docker push $DOCKER_USER/${svc}:$BUILD_TAG
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Dev & Staging') {
+            steps {
+                echo "🚀 Déploiement automatique sur dev et staging"
+                sh '''
+                    mkdir -p ~/.kube
+                    cat $KUBECONFIG_FILE > ~/.kube/config
+
+                    # Déploiement sur dev
+                    helm upgrade --install jenkins-exam-dev ./charts \
+                        --namespace dev --create-namespace \
+                        --set movieService.image.repository=$DOCKER_USER/movie-service \
+                        --set movieService.image.tag=$BUILD_TAG \
+                        --set castService.image.repository=$DOCKER_USER/cast-service \
+                        --set castService.image.tag=$BUILD_TAG
+
+                    # Déploiement sur staging
+                    helm upgrade --install jenkins-exam-staging ./charts \
+                        --namespace staging --create-namespace \
+                        --set movieService.image.repository=$DOCKER_USER/movie-service \
+                        --set movieService.image.tag=$BUILD_TAG \
+                        --set castService.image.repository=$DOCKER_USER/cast-service \
+                        --set castService.image.tag=$BUILD_TAG
+                '''
+            }
+        }
+
+        stage('Approval & Deploy to Production') {
+            when {
+                branch 'master' // ✅ Seulement sur master
+            }
+            steps {
+                script {
+                    // ✅ Demande de validation manuelle
+                    timeout(time: 20, unit: 'MINUTES') {
+                        input message: "Souhaitez-vous déployer en production ?", ok: "Oui, déployer"
+                    }
+
+                    echo "🚀 Déploiement manuel en production approuvé"
+
+                    sh '''
+                        mkdir -p ~/.kube
+                        cat $KUBECONFIG_FILE > ~/.kube/config
+
+                        helm upgrade --install jenkins-exam-prod ./charts \
+                            --namespace prod --create-namespace \
+                            --set movieService.image.repository=$DOCKER_USER/movie-service \
+                            --set movieService.image.tag=$BUILD_TAG \
+                            --set castService.image.repository=$DOCKER_USER/cast-service \
+                            --set castService.image.tag=$BUILD_TAG
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Pipeline terminé avec succès !"
+        }
+        failure {
+            echo "❌ Échec du pipeline. Consultez les logs Jenkins."
+        }
+    }
+}
+
