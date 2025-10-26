@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_USER = "mourad1966"
-        DOCKER_PASS = credentials('DOCKER_HUB_PASS')
+        DOCKER_PASS = credentials('github_creds')
         KUBECONFIG_FILE = credentials('config')
         BUILD_TAG = "v${BUILD_ID}"
     }
