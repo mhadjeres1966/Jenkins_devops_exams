@@ -3,48 +3,49 @@ pipeline {
 
     environment {
         DOCKER_USER = "mourad1966"
-        DOCKER_PASS = credentials('dockerhub_creds')
+        // ⚠️ Ne pas charger le token ici, il doit être injecté dans le stage avec withCredentials
         KUBECONFIG_FILE = credentials('config')
         BUILD_TAG = "v${BUILD_ID}"
     }
 
     stages {
 
-	stage('Checkout Code') {
-  	    steps {
-    	        echo "📦 Clonage du dépôt GitHub (branche courante)"
+        stage('Checkout Code') {
+            steps {
+                echo "📦 Clonage du dépôt GitHub (branche courante)"
                 git(
-      		  branch: 'ci-cd-setup',
-                  url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
-                  credentialsId: 'github_creds'
+                    branch: 'ci-cd-setup',
+                    url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
+                    credentialsId: 'github_creds'
                 )
             }
         }
 
+        stage('Build & Push Docker Images') {
+            steps {
+                script {
+                    echo "🐳 Construction et push des images Docker"
+                    def services = ['movie-service', 'cast-service']
 
-	stage('Build & Push Docker Images') {
-  	    steps {
-    		script {
-      		  echo "🐳 Construction et push des images Docker"
-      		  def services = ['movie-service', 'cast-service']
+                    // ✅ Injection correcte du token DockerHub ici
+                    withCredentials([usernamePassword(credentialsId: 'github_creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
 
-      		  withCredentials([usernamePassword(credentialsId: 'dockerhub_creds',
-        	    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS')]) {
+                        for (svc in services) {
+                            sh """
+                                echo "==> Building image for ${svc}"
+                                docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                                docker push $DOCKER_USER/${svc}:$BUILD_TAG
+                            """
+                        }
 
-        	    for (svc in services) {
-          	      sh """
-            	        echo "==> Building image for ${svc}"
-            	        docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
-            	        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            		docker push $DOCKER_USER/${svc}:$BUILD_TAG
-          	      """
-        	   }
-      		}
-             }
-    	   }
-        } 
-
+                        sh "docker logout"
+                    }
+                }
+            }
+        }
 
         stage('Deploy to Dev & Staging') {
             steps {
@@ -78,7 +79,6 @@ pipeline {
             }
             steps {
                 script {
-                    // ✅ Demande de validation manuelle
                     timeout(time: 20, unit: 'MINUTES') {
                         input message: "Souhaitez-vous déployer en production ?", ok: "Oui, déployer"
                     }
