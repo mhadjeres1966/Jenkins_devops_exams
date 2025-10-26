@@ -1,117 +1,112 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        DOCKER_USER = "mourad1966"
-        // ⚠️ Ne pas charger le token ici, il doit être injecté dans le stage avec withCredentials
-        KUBECONFIG_FILE = credentials('config')
-        BUILD_TAG = "v${BUILD_ID}"
+  environment {
+    BUILD_TAG = "v${BUILD_ID}"                // ex: v23
+    KUBECONFIG_FILE = credentials('config')   // kubeconfig (Secret file)
+  }
+
+  stages {
+
+    stage('Checkout Code') {
+      steps {
+        echo "📦 Checkout repository"
+        git(
+          branch: 'ci-cd-setup',
+          url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
+          credentialsId: 'github_creds'
+        )
+      }
     }
 
-    stages {
-
-        stage('Checkout Code') {
-            steps {
-                echo "📦 Clonage du dépôt GitHub (branche courante)"
-                git(
-                    branch: 'ci-cd-setup',
-                    url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
-                    credentialsId: 'github_creds'
-                )
+    stage('Build & Push Docker Images') {
+      steps {
+        script {
+          def services = ['movie-service', 'cast-service']
+          withCredentials([usernamePassword(
+            credentialsId: 'dockerhub_creds',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+          )]) {
+            sh '''
+              set -e
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            '''
+            for (svc in services) {
+              sh """
+                set -e
+                echo "==> Build & Push: ${svc}"
+                docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
+                docker push $DOCKER_USER/${svc}:$BUILD_TAG
+              """
             }
+            sh 'docker logout || true'
+          }
         }
-
-        stage('Build & Push Docker Images') {
-            steps {
-                script {
-                    echo "🐳 Construction et push des images Docker"
-                    def services = ['movie-service', 'cast-service']
-
-                    // ✅ Injection correcte du token DockerHub ici
-                    withCredentials([usernamePassword(credentialsId: 'github_creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
-
-                        for (svc in services) {
-                            sh """
-                                echo "==> Building image for ${svc}"
-                                docker build -t $DOCKER_USER/${svc}:$BUILD_TAG ./${svc}
-                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                                docker push $DOCKER_USER/${svc}:$BUILD_TAG
-                            """
-                        }
-
-                        sh "docker logout"
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to Dev & Staging') {
-            steps {
-                echo "🚀 Déploiement automatique sur dev et staging"
-                sh '''
-                    mkdir -p ~/.kube
-                    cat $KUBECONFIG_FILE > ~/.kube/config
-
-                    # Déploiement sur dev
-                    helm upgrade --install jenkins-exam-dev ./charts \
-                        --namespace dev --create-namespace \
-                        --set movieService.image.repository=$DOCKER_USER/movie-service \
-                        --set movieService.image.tag=$BUILD_TAG \
-                        --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG \
-			--set service.nodePort=30007
-
-                    # Déploiement sur staging
-                    helm upgrade --install jenkins-exam-staging ./charts \
-                        --namespace staging --create-namespace \
-                        --set movieService.image.repository=$DOCKER_USER/movie-service \
-                        --set movieService.image.tag=$BUILD_TAG \
-                        --set castService.image.repository=$DOCKER_USER/cast-service \
-                        --set castService.image.tag=$BUILD_TAG
-			--set service.nodePort=30008 \
-                '''
-            }
-        }
-
-        stage('Approval & Deploy to Production') {
-            when {
-                branch 'master' // ✅ Seulement sur master
-            }
-            steps {
-                script {
-                    timeout(time: 20, unit: 'MINUTES') {
-                        input message: "Souhaitez-vous déployer en production ?", ok: "Oui, déployer"
-                    }
-
-                    echo "🚀 Déploiement manuel en production approuvé"
-
-                    sh '''
-                        mkdir -p ~/.kube
-                        cat $KUBECONFIG_FILE > ~/.kube/config
-
-                        helm upgrade --install jenkins-exam-prod ./charts \
-                            --namespace prod --create-namespace \
-                            --set movieService.image.repository=$DOCKER_USER/movie-service \
-                            --set movieService.image.tag=$BUILD_TAG \
-                            --set castService.image.repository=$DOCKER_USER/cast-service \
-                            --set castService.image.tag=$BUILD_TAG \
-			    --set service.nodePort=30009
-
-                    '''
-                }
-            }
-        }
+      }
     }
 
-    post {
-        success {
-            echo "✅ Pipeline terminé avec succès !"
-        }
-        failure {
-            echo "❌ Échec du pipeline. Consultez les logs Jenkins."
-        }
+    stage('Deploy to Dev & Staging') {
+      steps {
+        echo "🚀 Deploy to dev & staging via Helm"
+        sh '''
+          set -e
+          mkdir -p ~/.kube
+          cat "$KUBECONFIG_FILE" > ~/.kube/config
+
+          # --- DEV (NodePort 30007) ---
+          helm upgrade --install jenkins-exam-dev ./charts \
+            --namespace dev --create-namespace \
+            --set movieService.image.repository=$DOCKER_USER/movie-service \
+            --set movieService.image.tag=$BUILD_TAG \
+            --set castService.image.repository=$DOCKER_USER/cast-service \
+            --set castService.image.tag=$BUILD_TAG \
+            --set service.nodePort=30007
+
+          # --- STAGING (NodePort 30008) ---
+          helm upgrade --install jenkins-exam-staging ./charts \
+            --namespace staging --create-namespace \
+            --set movieService.image.repository=$DOCKER_USER/movie-service \
+            --set movieService.image.tag=$BUILD_TAG \
+            --set castService.image.repository=$DOCKER_USER/cast-service \
+            --set castService.image.tag=$BUILD_TAG \
+            --set service.nodePort=30008
+        '''
+      }
     }
+
+    stage('Approval & Deploy to Production') {
+      when { branch 'master' }   // prod seulement depuis master
+      steps {
+        script {
+          timeout(time: 20, unit: 'MINUTES') {
+            input message: 'Déployer en PRODUCTION ?', ok: 'Oui, déployer'
+          }
+          echo '🚀 Déploiement en production'
+
+          sh '''
+            set -e
+            mkdir -p ~/.kube
+            cat "$KUBECONFIG_FILE" > ~/.kube/config
+
+            # --- PROD (NodePort 30009) ---
+            helm upgrade --install jenkins-exam-prod ./charts \
+              --namespace prod --create-namespace \
+              --set movieService.image.repository=$DOCKER_USER/movie-service \
+              --set movieService.image.tag=$BUILD_TAG \
+              --set castService.image.repository=$DOCKER_USER/cast-service \
+              --set castService.image.tag=$BUILD_TAG \
+              --set service.nodePort=30009
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success { echo '✅ Pipeline terminé avec succès' }
+    failure { echo '❌ Échec du pipeline — voir les logs' }
+    always  { cleanWs() }
+  }
 }
 
