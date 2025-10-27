@@ -83,7 +83,7 @@ pipeline {
 
         stage('Approval & Deploy to Production') {
             when {
-                branch 'master' // ✅ Seulement sur master
+                expression { env.GIT_BRANCH == 'origin/master' || env.GIT_BRANCH == 'master' } // ✅ Seulement sur master
             }
             steps {
                 script {
