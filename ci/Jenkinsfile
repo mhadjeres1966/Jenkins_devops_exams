@@ -3,7 +3,6 @@ pipeline {
 
     environment {
         DOCKER_USER = "mourad1966"
-        // ⚠️ Ne pas charger le token ici, il doit être injecté dans le stage avec withCredentials
         KUBECONFIG_FILE = credentials('config')
         BUILD_TAG = "v${BUILD_ID}"
     }
@@ -12,7 +11,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                echo "📦 Clonage du dépôt GitHub (branche courante)"
+                echo " ==> Clonage du dépôt GitHub (branche courante)"
                 git(
                     branch: 'master',
                     url: 'https://github.com/mhadjeres1966/Jenkins_devops_exams.git',
@@ -24,10 +23,10 @@ pipeline {
         stage('Build & Push Docker Images') {
             steps {
                 script {
-                    echo "🐳 Construction et push des images Docker"
+                    echo "  ==> Construction et push des images Docker"
                     def services = ['movie-service', 'cast-service']
 
-                    // ✅ Injection correcte du token DockerHub ici
+                    //  Injection du token DockerHub ici
                     withCredentials([usernamePassword(credentialsId: 'github_creds',
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS')]) {
@@ -49,11 +48,11 @@ pipeline {
 
         stage('Deploy to Dev & Staging') {
             steps {
-                echo "🚀 Déploiement automatique sur dev et staging"
+                echo "  ==> Déploiement automatique sur dev et staging"
                 sh '''
                     mkdir -p ~/.kube
                     cat $KUBECONFIG_FILE > ~/.kube/config
-
+		    # J'ai changé les numéros de port car le pipeline me sortait une erreur port 30007 déjà utilisé
                     # Déploiement sur dev
                     helm upgrade --install jenkins-exam-dev ./charts \
                         --namespace dev --create-namespace \
@@ -83,7 +82,7 @@ pipeline {
 
         stage('Approval & Deploy to Production') {
             when {
-                expression { env.GIT_BRANCH == 'origin/master' || env.GIT_BRANCH == 'master' } // ✅ Seulement sur master
+                expression { env.GIT_BRANCH == 'origin/master' || env.GIT_BRANCH == 'master' } // Passage au deploiemnt Seulement sur master
             }
             steps {
                 script {
@@ -91,7 +90,7 @@ pipeline {
                         input message: "Souhaitez-vous déployer en production ?", ok: "Oui, déployer"
                     }
 
-                    echo "🚀 Déploiement manuel en production approuvé"
+                    echo "  ==> Déploiement manuel en production approuvé"
 
                     sh '''
                         mkdir -p ~/.kube
@@ -112,10 +111,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Pipeline terminé avec succès !"
+            echo " ==> Pipeline terminé avec succès !"
         }
         failure {
-            echo "❌ Échec du pipeline. Consultez les logs Jenkins."
+            echo " ==> Échec du pipeline. Consultez les logs Jenkins."
         }
     }
 }
